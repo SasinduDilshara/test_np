@@ -1,0 +1,23 @@
+ # Claim management platform
+
+## Overview
+
+Employees of the organization (users) may need to spend on work-related expenses for which they can subsequently raise claims. The requirement is to implement a claims management platform that would enable managing these claims online.
+
+The following functionality should be supported.
+
+### Add a new claim
+
+An authorized user can use the platform to submit a claim. If the total value of all of the users claims (the sum of previous claims and new claims) does not exceed $10, the claim should be automatically approved and the user should be shown the same.
+
+If it exceeds the pre-authorized limit, the claim should be marked as a pending claim and an email should be sent out the user and the finance team (default "finance@example.com", should also be configurable), informing that the new claim is pending approval as the total exceeds the pre-authorized limit and that the finance team will contact the user. The same should be reflected in the response shown to the user along with the relevant claim ID.
+
+### Get the status of the claim
+
+A user should be able to enter the claim ID and check the status of the claim. Only the user who submitted the claim should be able to see the status of their claim.
+
+## Non functional requirements
+
+- Should handle concurrency
+- should scalable
+- should available in 24/7
