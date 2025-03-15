@@ -1,0 +1,1 @@
+The user intends to use PostgreSQL as the database handler, replacing the previously planned MySQL database implementation for data handling and API endpoint for deleting an existing claim. The user also requires storing transaction logs in a MySQL database.
