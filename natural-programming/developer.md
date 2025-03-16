@@ -1,1 +1,1 @@
-The user requests the generation of a README file for source code that includes documentation of use cases, scope, API endpoints, and license details.
+The user requested API documentation and specified MsSQL as the database requirement, superseding the previous PostgreSQL requirement. The user also requested adding API documentation for the code.

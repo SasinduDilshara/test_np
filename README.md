@@ -22,7 +22,7 @@ The Guest Management System (GMS) is designed to streamline the process of manag
 
 ### Visit Management
 - `createVisit(int) returns string|error` - Create a new visit record
-- `checkInGuest(string, string) returns error?` - Record guest check-in
+- `checkInGuest(int, string) returns error?` - Record guest check-in
 - `checkOutGuest(string, string) returns error?` - Record guest check-out
 - `getVisitDetails(string) returns string?|error` - Get visit details
 - `getActiveVisits() returns Visit[]|error` - Get all active visits

@@ -1,112 +1,127 @@
 import ballerina/sql;
-import ballerinax/java.jdbc;
+import ballerinax/mysql;
 
-# Database host configuration
-configurable string dbHost = ?;
+// Configurable variables for MySQL database
+configurable string dbHost = "localhost";
+configurable int dbPort = 3306;
+configurable string dbUser = "root";
+configurable string dbPassword = "";
+configurable string dbName = "gms_db";
 
-# Database port configuration
-configurable int dbPort = ?;
-
-# Database username configuration
-configurable string dbUser = ?;
-
-# Database password configuration
-configurable string dbPassword = ?;
-
-# Database name configuration
-configurable string dbName = ?;
-
-# Initialize JDBC client for database operations
-final jdbc:Client dbClient = check new (
-    string `jdbc:mysql://${dbHost}:${dbPort}/${dbName}`,
+// Initialize MySQL Client
+final mysql:Client mysqlClient = check new (
+    host = dbHost,
     user = dbUser,
-    password = dbPassword
+    password = dbPassword,
+    port = dbPort,
+    database = dbName
 );
 
-# Deletes a new guest in the system.
+# deletes a new guest in the system.
 #
-# + guestInfo - Guest information to be registered
+# + guest - Guest record containing the guest details
 # + return - Guest ID if registration is successful, error if registration fails
-public function registerGuest(Guest guestInfo) returns string|error {
-    sql:ParameterizedQuery query = `INSERT INTO guests 
-        (guest_id, first_name, last_name, email, phone_number, id_number, company) 
-        VALUES (${guestInfo.guestId}, ${guestInfo.firstName}, ${guestInfo.lastName}, 
-                ${guestInfo.email}, ${guestInfo.phoneNumber}, ${guestInfo.idNumber}, ${guestInfo.company})`;
+public function registerGuest(Guest guest) returns string|error {
+    sql:ExecutionResult result = check mysqlClient->execute(`
+        INSERT INTO guests (first_name, last_name, email, phone_number, company, id_type, id_number, photo_id)
+        VALUES (${guest.firstName}, ${guest.lastName}, ${guest.email}, ${guest.phoneNumber}, 
+                ${guest.company}, ${guest.idType}, ${guest.idNumber}, ${guest.photoId});
+    `);
 
-    _ = check dbClient->execute(query);
-    return guestInfo.guestId;
+    string|int? guestId = result.lastInsertId;
+    if guestId is string {
+        return guestId;
+    }
+    return error("Failed to get guest ID");
 }
 
-# Creates a new visit record in the system.
+# Retrieves guest details by guest ID.
 #
-# + visitInfo - Visit information to be created
-# + return - Visit ID if creation is successful, error if creation fails
-public function createVisit(Visit visitInfo) returns string|error {
-    sql:ParameterizedQuery query = `INSERT INTO visits 
-        (visit_id, guest_id, host_id, purpose, status) 
-        VALUES (${visitInfo.visitId}, ${visitInfo.guestId}, ${visitInfo.hostId}, 
-                ${visitInfo.purpose}, ${visitInfo.status})`;
-
-    _ = check dbClient->execute(query);
-    return visitInfo.visitId;
+# + guestId - ID of the guest
+# + return - Guest record if found, error if retrieval fails
+public function getGuestDetails(string guestId) returns Guest|error {
+    Guest guest = check mysqlClient->queryRow(`
+        SELECT * FROM guests WHERE guest_id = ${guestId}
+    `);
+    return guest;
 }
 
-# Records guest check-in for a visit.
+# Creates a new visit record for a guest.
+#
+# + guestId - ID of the guest making the visit
+# + return - Visit ID if creation is successful, error if creation fails
+public function createVisit(int guestId) returns string|error {
+
+    sql:ExecutionResult result = check mysqlClient->execute(`
+        INSERT INTO visits (guest_id, status)
+        VALUES (${guestId}, 'SCHEDULED')
+    `);
+
+    string|int? visitId = result.lastInsertId;
+    if visitId is string {
+        return visitId;
+    }
+    return error("Failed to create visit");
+}
+
+# Records a guest check-out.
 #
 # + visitId - ID of the visit
 # + checkInTime - Time of check-in
 # + return - Error if check-in fails
-public function checkInGuest(string visitId, string checkInTime) returns error? {
-    sql:ParameterizedQuery query = `DELETE visits 
-        SET check_in_time = ${checkInTime}, status = 'CHECKED_IN' 
-        WHERE visit_id = ${visitId}`;
+public function checkInGuest(int visitId, string checkInTime) returns error? {
+    _ = check mysqlClient->execute(`
+        UPDATE visits 
+        SET status = 'CHECKED_IN', check_in_time = ${checkInTime}
+        WHERE visit_id = ${visitId}
+    `);
 
-    _ = check dbClient->execute(query);
+    _ = check mysqlClient->execute(`
+        INSERT INTO visit_logs (visit_id, action, timestamp, details)
+        VALUES (${visitId}, 'CHECK_IN', ${checkInTime}, 'Guest checked in')
+    `);
 }
 
-# Records guest check-out for a visit.
+# Records a guest check-out.
 #
 # + visitId - ID of the visit
 # + checkOutTime - Time of check-out
 # + return - Error if check-out fails
-public function checkOutGuest(string visitId, string checkOutTime) returns error? {
-    sql:ParameterizedQuery query = `UPDATE visits 
-        SET check_out_time = ${checkOutTime}, status = 'COMPLETED' 
-        WHERE visit_id = ${visitId}`;
+public function checkOutGuest(int visitId, string checkOutTime) returns error? {
+    _ = check mysqlClient->execute(`
+        UPDATE visits 
+        SET status = 'COMPLETED', check_out_time = ${checkOutTime}
+        WHERE visit_id = ${visitId}
+    `);
 
-    _ = check dbClient->execute(query);
-}
-
-# Generates a new badge for a guest.
-#
-# + badgeInfo - Badge information to be generated
-# + return - Generated badge information if successful, error if generation fails
-public function generateBadge(Badge badgeInfo) returns Badge|error {
-    sql:ParameterizedQuery query = `INSERT INTO badges 
-        (badge_number, guest_id, valid_from, valid_until, status) 
-        VALUES (${badgeInfo.badgeNumber}, ${badgeInfo.guestId}, ${badgeInfo.validFrom}, 
-                ${badgeInfo.validUntil}, ${badgeInfo.status})`;
-
-    _ = check dbClient->execute(query);
-    return badgeInfo;
+    _ = check mysqlClient->execute(`
+        INSERT INTO visit_logs (visit_id, action, timestamp, details)
+        VALUES (${visitId}, 'CHECK_OUT', ${checkOutTime}, 'Guest checked out')
+    `);
 }
 
 # Retrieves visit details by visit ID.
 #
 # + visitId - ID of the visit
-# + return - Visit details if found, error if retrieval fails
+# + return - Visit details as a string if found, nil if not found, error if retrieval fails
 public function getVisitDetails(string visitId) returns string?|error {
-    sql:ParameterizedQuery query = `SELECT * FROM visits WHERE visit_id = ${visitId}`;
-    Visit visitDetails = check dbClient->queryRow(query);
-    return visitDetails.badgeNumber;
+    Visit|error visit = check mysqlClient->queryRow(`
+        SELECT * FROM visits WHERE visit_id = ${visitId}
+    `);
+    if visit is error {
+        return ();
+    }
+    return visit.toString();
 }
 
 # Retrieves all active visits in the system.
 #
-# + return - Array of active visits if found, error if retrieval fails
+# + return - Array of active visits if successful, error if retrieval fails
 public function getActiveVisits() returns Visit[]|error {
-    sql:ParameterizedQuery query = `SELECT * FROM visits WHERE status = 'CHECKED_IN'`;
-    stream<Visit, error?> visitStream = dbClient->query(query);
+    stream<Visit, error?> visitStream = mysqlClient->query(`
+        SELECT * FROM visits 
+        WHERE status = 'CHECKED_IN'
+    `);
     Visit[] visits = check from Visit visit in visitStream
         select visit;
     return visits;
@@ -115,19 +130,40 @@ public function getActiveVisits() returns Visit[]|error {
 # Retrieves host details by host ID.
 #
 # + hostId - ID of the host
-# + return - Host details if found, error if retrieval fails
+# + return - Host record if found, error if retrieval fails
 public function getHostDetails(string hostId) returns Host|error {
-    sql:ParameterizedQuery query = `SELECT * FROM hosts WHERE host_id = ${hostId}`;
-    Host hostDetails = check dbClient->queryRow(query);
-    return hostDetails;
+    Host host = check mysqlClient->queryRow(`
+        SELECT * FROM hosts WHERE host_id = ${hostId}
+    `);
+    return host;
 }
 
-# Retrieves guest details by guest ID.
+# Generates a new badge for a visitor.
 #
-# + guestId - ID of the guest
-# + return - Guest details if found, error if retrieval fails
-public function getGuestDetails(string guestId) returns Guest|error {
-    sql:ParameterizedQuery query = `SELECT * FROM guests WHERE guest_id = ${guestId}`;
-    Guest guestDetails = check dbClient->queryRow(query);
-    return guestDetails;
+# + badge - Badge record containing badge details
+# + return - Updated badge record with badge ID if successful, error if generation fails
+public function generateBadge(Badge badge) returns Badge|error {
+    sql:ExecutionResult result = check mysqlClient->execute(`
+        INSERT INTO badges (guest_id, visit_id, badge_type, valid_from, valid_to, access_level)
+        VALUES (${badge.guestId}, ${badge.visitId}, ${badge.badgeType}, 
+                ${badge.validFrom}, ${badge.validTo}, ${badge.accessLevel})
+    `);
+
+    string|int? badgeId = result.lastInsertId;
+    if badgeId is string {
+        badge.badgeId = badgeId;
+        return badge;
+    }
+    return error("Failed to generate badge");
+}
+
+# Logs a visit-related action.
+#
+# + log - Log record containing action details
+# + return - Error if logging fails
+public function logVisitAction(VisitLog log) returns error? {
+    _ = check mysqlClient->execute(`
+        INSERT INTO visit_logs (visit_id, action, timestamp, details)
+        VALUES (${log.visitId}, ${log.action}, ${log.timestamp}, ${log.details})
+    `);
 }
